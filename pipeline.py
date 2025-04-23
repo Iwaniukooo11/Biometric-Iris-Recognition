@@ -131,7 +131,11 @@ class IrisPipeline:
         # TODO: check these angles on image (should be on the bottom IMO)
         angle_start, angle_end = 120, 60
         projection = self._calculate_projection(gray_bin, self.new_center, angle_start, angle_end)
-        self.average_projection = int(np.mean(projection))
+        #get 10nd biggest projection
+        projection.sort(reverse=True)
+        projection_10 = projection[10]
+        # self.average_projection = int(np.mean(projection))
+        self.average_projection=projection_10
         return gray_bin
 
 
