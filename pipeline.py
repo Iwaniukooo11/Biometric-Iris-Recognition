@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class IrisPipeline:
-    def __init__(self, path):
+    def __init__(self, path, debug = False):
         self.path = path
         self.img_original = None
         self.img_rgb = None
@@ -17,11 +17,28 @@ class IrisPipeline:
         self.pupil_radius = None
         self.iris_rect = None
         self.pupil_threshold = 20
+        self.mean_annular = None
+        self.debug = debug
 
     def load_image(self):
+        # If the image is supplied insteaad of path, use it directly
+        if isinstance(self.path, np.ndarray):
+            self.img_original = self.path
+        else:
+            self.img_original = cv2.imread(self.path)
+
         # Load the image and convert it to RGB
-        self.img_original = cv2.imread(self.path)
         self.img_rgb = cv2.cvtColor(self.img_original, cv2.COLOR_BGR2RGB)
+
+        # Center crop the image
+        h, w, _ = self.img_rgb.shape
+        crop_size = int(min(h, w) * 0.75)  # Crop to 60% of the smaller dimension
+        center_x, center_y = w // 2, h // 2
+        x1 = max(center_x - crop_size // 2, 0)
+        y1 = max(center_y - crop_size // 2, 0)
+        x2 = min(center_x + crop_size // 2, w)
+        y2 = min(center_y + crop_size // 2, h)
+        self.img_rgb = self.img_rgb[y1:y2, x1:x2]
 
     def preprocess(self):
         # Convert to grayscale
@@ -99,44 +116,95 @@ class IrisPipeline:
         cv2.circle(mask, self.new_center, self.new_radius+2, (255,255,255), -1)
         img_with_pupil = self.img_rgb.copy()
         img_with_pupil[mask > 0] = 255
-        # Enhance contrast
-        alpha = 1.5
-        beta = 30
-        enhanced_img = cv2.convertScaleAbs(img_with_pupil, alpha=alpha, beta=beta)
+        #plot img_with_pupil
+        if self.debug:
+            plt.imshow(img_with_pupil)
+            plt.title("Image with Pupil")
+            plt.axis('off')
+            plt.show()
+        
+        #enhanced_image is img_with_pupil minus mean + 128 and clip
+        mean = np.mean(img_with_pupil)
+        enhanced_img = img_with_pupil.astype(np.float32) - mean + 128
+        enhanced_img = np.clip(enhanced_img, 0, 255).astype(np.uint8)
+        
+        gamma = 0.75
+        enhanced_img = np.power(enhanced_img / 255.0, gamma) * 255
+        enhanced_img = np.clip(enhanced_img, 0, 255).astype(np.uint8)
+        if self.debug:
+            plt.imshow(enhanced_img)
+            plt.title("Enhanced Image")
+            plt.axis('off')
+            plt.show()
+
         return enhanced_img
+        
+        # return img_with_pupil
+
+    def calculate_mean_annular(self, enhanced_img):
+        if len(enhanced_img.shape) == 3:  # If the image has 3 channels (color)
+            enhanced_img = cv2.cvtColor(enhanced_img, cv2.COLOR_RGB2GRAY)
+        _new_radius = self.new_radius+5
+        # Create a mask for the larger circle (new_radius + 2)
+        h, w = enhanced_img.shape
+        y, x = np.ogrid[:h, :w]
+        distance_from_center = np.sqrt((x - self.new_center[0])**2 + (y - self.new_center[1])**2)
+
+        # Mask for the larger circle
+        mask_large = distance_from_center <= (_new_radius +10)
+
+        # Mask for the smaller circle
+        mask_small = distance_from_center <= _new_radius
+
+        # Subtract the smaller circle mask from the larger circle mask to get the annular region
+        mask_annular = mask_large & ~mask_small
+
+        # Calculate the mean pixel value in the annular region
+        mean_annular = np.mean(enhanced_img[mask_annular])
+        self.mean_annular = mean_annular
 
     def threshold_and_projection(self, enhanced_img):
         # Use the pupil center and radius calculated in find_pupil
         cx, cy = self.new_center
         r = self.new_radius
- 
-        mean_val = self._calculate_mean_on_horizontal_line(enhanced_img, cx, cy, r)
+        self.calculate_mean_annular(enhanced_img)
+        # mean_val = self._calculate_mean_on_horizontal_line(enhanced_img, cx, cy, r)
         _, binary_thresh = cv2.threshold(
             enhanced_img,
-            min(1.25 * mean_val, 220),
+            # min(
+            # 5 * mean_val, 220),
+            self.mean_annular+12,
             255,
             cv2.THRESH_BINARY
         )
 
-        kernel2 = np.ones((2,2), np.uint8)
-        closing = cv2.morphologyEx(binary_thresh, cv2.MORPH_CLOSE, kernel2, iterations=4)
-        gray_bin = cv2.cvtColor(closing, cv2.COLOR_BGR2GRAY)
+        # kernel2 = np.ones((2,2), np.uint8)
+        # closing = cv2.morphologyEx(binary_thresh, cv2.MORPH_CLOSE, kernel2, iterations=4)
+        # gray_bin = cv2.cvtColor(closing, cv2.COLOR_BGR2GRAY)
 
         # UNCOMMENT TO SEE THRESHOLD EFFECT
-        # plt.imshow(gray_bin, cmap='gray')
-        # plt.title('Binary Threshold Image')
-        # plt.axis('off')
-        # plt.show()
+        # self.calculate_mean_annular(binary_thresh)
+        if self.debug:
+            plt.imshow(binary_thresh, cmap='gray')
+            plt.title(f"Binary Threshold Image {self.mean_annular}")
+            plt.axis('off')
+            plt.show()
+
         
         # TODO: check these angles on image (should be on the bottom IMO)
-        angle_start, angle_end = 120, 60
-        projection = self._calculate_projection(gray_bin, self.new_center, angle_start, angle_end)
-        #get 10nd biggest projection
-        projection.sort(reverse=True)
-        projection_10 = projection[10]
+        # angle_start, angle_end = 120, 60
+        # angle_start, angle_end = 20, 40
+        # angle_start, angle_end = 30, 50
+        angle_start, angle_end = 90, 50
+        
+        binary_thresh=cv2.cvtColor(binary_thresh, cv2.COLOR_BGR2GRAY)
+        projection = self._calculate_projection(binary_thresh, self.new_center, angle_start, angle_end)
         # self.average_projection = int(np.mean(projection))
-        self.average_projection=projection_10
-        return gray_bin
+        self.average_projection=int(np.max(projection))
+        # projection=sorted(projection,reverse=True)
+        # projection_10=projection[5]
+        # self.average_projection=projection_10
+        return binary_thresh
 
 
     def _calculate_mean_on_horizontal_line(self, img, cx, cy, r):
@@ -162,7 +230,9 @@ class IrisPipeline:
             for r in range(max(h, w)):
                 x = int(center[0] + r * dx)
                 y = int(center[1] + r * dy)
-                if 0 <= x < w and 0 <= y < h:
+                distance = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)
+                
+                if 0 <= x < w and 0 <= y < h and distance <= self.new_radius *2.5:
                     line_sum += 1 if gray_image[y, x] == 0 else 0
                 else:
                     break
