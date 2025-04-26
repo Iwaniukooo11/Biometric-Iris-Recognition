@@ -13,44 +13,59 @@ from normalization import daugman_normalization_modified
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
-# Assume IrisPipeline and processing functions are imported/defined here
-# from your_module import IrisPipeline, daugman_normalization_modified, enhanced_iris_encoder
-
 app.layout = dbc.Container([
     html.H1("Iris Recognition System", className="mb-4 text-center"),
-    
-    dcc.Upload(
-        id='upload-image',
-        children=html.Div([
-            'Drag and Drop or ',
-            html.A('Select an Eye Image')
-        ]),
-        style={
-            'width': '100%',
-            'height': '60px',
-            'lineHeight': '60px',
-            'borderWidth': '1px',
-            'borderStyle': 'dashed',
-            'borderRadius': '5px',
-            'textAlign': 'center',
-            'margin': '10px'
-        },
-        multiple=False
-    ),
-    
+
     dbc.Row([
         dbc.Col([
-            html.Div(id='original-image', className="mb-4")
+            html.H4("Upload Eye Image", className="text-center"),
+            dcc.Upload(
+                id='upload-image',
+                children=html.Div(id='upload-area', children=[
+                    'Drag and Drop or ',
+                    html.A('Select an Eye Image')
+                ]),
+                style={
+                    'width': '100%',
+                    'height': '500px',
+                    'lineHeight': '300px',
+                    'borderWidth': '2px',
+                    'borderStyle': 'dashed',
+                    'borderRadius': '10px',
+                    'textAlign': 'center',
+                    'margin': '10px',
+                    'backgroundColor': '#f9f9f9',
+                    'overflow': 'hidden'
+                },
+                multiple=False
+            )
         ], width=6),
-        
+
         dbc.Col([
-            html.Div(id='iris-code', className="mb-4")
+            html.H4("Generated Iris Code", className="text-center"),
+            html.Div(id='iris-code', style={
+                'border': '1px solid #ddd',
+                'borderRadius': '10px',
+                'padding': '10px',
+                'textAlign': 'center',
+                'backgroundColor': '#f9f9f9',
+                'minHeight': '500px',
+                'display': 'flex',
+                'alignItems': 'center',
+                'justifyContent': 'center'
+            }),
+            html.Div([
+                html.Button("Save Code Plot", id="save-plot-btn", className="btn btn-primary mt-3"),
+                html.Button("Save Code as .txt", id="save-code-btn", className="btn btn-secondary mt-3 ml-2"),
+                dcc.Download(id="download-plot"),
+                dcc.Download(id="download-code")
+            ], className="text-center mt-3")
         ], width=6)
     ]),
-    
+
     dbc.Row([
         dbc.Col([
-            html.Div(id='processing-status')
+            html.Div(id='processing-status', className="mt-4")
         ], width=12)
     ])
 ], fluid=True)
@@ -60,28 +75,22 @@ def parse_image(contents):
     decoded = base64.b64decode(content_string)
     image = Image.open(io.BytesIO(decoded))
     
-    # Ensure image is in RGB mode if it's not already
     if image.mode == 'RGB':
         image_np = np.array(image)
         gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
-    elif image.mode == 'L':  # Already grayscale
+    elif image.mode == 'L':
         gray = np.array(image)
     else:
-        # Convert everything else (e.g., RGBA) to RGB first
         image = image.convert('RGB')
         image_np = np.array(image)
         gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
 
-    # Get the path of the uploaded image
-    
     return gray
 
 def numpy_to_base64(image_array):
-    # Convert to uint8 if needed
     if image_array.dtype != np.uint8:
         image_array = (255 * (image_array / np.max(image_array))).astype(np.uint8)
 
-    # Convert grayscale or RGB image to PIL image
     if image_array.ndim == 2:
         pil_img = Image.fromarray(image_array, mode='L')
     elif image_array.ndim == 3:
@@ -89,18 +98,15 @@ def numpy_to_base64(image_array):
     else:
         raise ValueError("Unsupported image shape")
 
-    # Save PIL image to bytes buffer
     buff = io.BytesIO()
-    pil_img.save(buff, format="PNG")  # ← this needs a buffer, which we're giving
-    buff.seek(0)  # Move to start of the buffer
+    pil_img.save(buff, format="PNG")
+    buff.seek(0)
 
-    # Encode the buffer contents to base64
     img_base64 = base64.b64encode(buff.read()).decode("utf-8")
     return img_base64
 
-
 @callback(
-    [Output('original-image', 'children'),
+    [Output('upload-area', 'children'),
      Output('iris-code', 'children'),
      Output('processing-status', 'children')],
     [Input('upload-image', 'contents')],
@@ -111,15 +117,12 @@ def process_image(contents):
         return dash.no_update, dash.no_update, "No image uploaded"
     
     try:
-        # Process image
         gray_image = parse_image(contents)
 
-        # Supply path instead of image
         pipeline = IrisPipeline(gray_image)
         pipeline.run_pipeline()
         results = pipeline.get_results()
         
-        # Normalize iris region
         normalized = daugman_normalization_modified(
             gray_image,
             results["pupil_center"],
@@ -127,14 +130,11 @@ def process_image(contents):
             results["iris_radius"]
         )
         
-        # Generate iris code
         iris_code = enhanced_iris_encoder(normalized)
 
-        # Create visualizations
         original_img = numpy_to_base64(gray_image)
         
-        # Scale up the iris code for better resolution
-        scale_factor = 10  # Increase resolution by scaling
+        scale_factor = 10
         iris_code_resized = cv2.resize(
             (iris_code * 255).astype(np.uint8),
             None,
@@ -144,11 +144,32 @@ def process_image(contents):
         )
         code_img = numpy_to_base64(iris_code_resized)
         
+        global saved_iris_code  # Save the iris code globally for download callbacks
+        saved_iris_code = iris_code
+
         return [
-            html.Img(src=f'data:image/png;base64,{original_img}',
-                style={'width': '100%', 'border': '1px solid #ddd'}),
-            html.Img(src=f'data:image/png;base64,{code_img}',
-                style={'width': '100%', 'border': '1px solid #ddd'}),
+            html.Img(
+                src=f'data:image/png;base64,{original_img}',
+                style={
+                    'maxWidth': '100%',
+                    'maxHeight': '100%',
+                    'objectFit': 'contain',
+                    'margin': 'auto',
+                    'display': 'block',
+                    'borderRadius': '10px'
+                }
+            ),
+            html.Img(
+                src=f'data:image/png;base64,{code_img}',
+                style={
+                    'maxWidth': '100%',
+                    'maxHeight': '100%',
+                    'objectFit': 'contain',
+                    'margin': 'auto',
+                    'display': 'block',
+                    'borderRadius': '10px'
+                }
+            ),
             dbc.Alert("Processing completed successfully!", color="success")
         ]
     
@@ -158,6 +179,43 @@ def process_image(contents):
             dash.no_update,
             dbc.Alert(f"Error processing image: {str(e)}", color="danger")
         )
+
+@callback(
+    Output("download-plot", "data"),
+    Input("save-plot-btn", "n_clicks"),
+    prevent_initial_call=True
+)
+def save_plot(n_clicks):
+    global saved_iris_code
+    if saved_iris_code is None:
+        return dash.no_update
+
+    # Generate the plot
+    fig, ax = plt.subplots()
+    ax.imshow(saved_iris_code, cmap="gray")
+    ax.axis("off")
+
+    # Save the plot to a BytesIO object
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png")
+    buf.seek(0)
+    plt.close(fig)
+
+    return dcc.send_bytes(buf.getvalue(), "iris_code_plot.png")
+
+@callback(
+    Output("download-code", "data"),
+    Input("save-code-btn", "n_clicks"),
+    prevent_initial_call=True
+)
+def save_code(n_clicks):
+    global saved_iris_code
+    if saved_iris_code is None:
+        return dash.no_update
+
+    # Convert the iris code to a list of numbers and save as text
+    code_as_text = "\n".join(map(str, saved_iris_code.flatten()))
+    return dcc.send_string(code_as_text, "iris_code.txt")
 
 if __name__ == '__main__':
     app.run_server(debug=True)

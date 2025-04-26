@@ -1,5 +1,3 @@
-# filepath: /home/iwaniukooo/Documents/Projects/biometria-iris/Biometric-Iris-Recognition/iris_pipeline.py
-
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt

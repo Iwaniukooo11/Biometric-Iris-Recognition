@@ -2,8 +2,9 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-def daugman_normalization(image, pupil_center, pupil_radius, iris_radius):
+def _daugman_normalization(image, pupil_center, pupil_radius, iris_radius):
     """
+    THIS IS AN OLD VERSION OF THE FUNCTION. PLEASE USE THE MODIFIED VERSION.
     Normalizes the iris region into a rectangular polar form and extracts features using Gaussian-weighted column means.
     
     Parameters:
