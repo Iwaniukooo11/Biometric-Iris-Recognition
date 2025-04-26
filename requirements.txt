@@ -1,0 +1,7 @@
+dash
+dash-bootstrap-components
+numpy
+matplotlib
+opencv-python
+Pillow
+scikit-image
