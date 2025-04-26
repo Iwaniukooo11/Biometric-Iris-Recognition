@@ -7,9 +7,9 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 import cv2
-from pipeline import IrisPipeline
-from encoding import enhanced_iris_encoder
-from normalization import daugman_normalization_modified
+from src.pipeline import IrisPipeline
+from src.encoding import enhanced_iris_encoder
+from src.normalization import daugman_normalization_modified
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
