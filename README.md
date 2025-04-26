@@ -46,10 +46,10 @@ For a detailed walkthrough of all functionalities of the project, including segm
 
 ## Results
 
-![Image of 3 eyes with the iris segmented](img/3_iris_segmented)
+![Image of 3 eyes with the iris segmented](img/3_iris_segmented.png)
 *Figure 1: Image of 3 eyes (2 first are of the same person) with the iris segmented on the images.*
 
-![Codes for the images above](img/3_iris_codes)
+![Codes for the images above](img/3_iris_codes.png)
 *Figure 2: Iris Codes for the images above.*
 
 
